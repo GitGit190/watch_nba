@@ -1,0 +1,33 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Courtside",
+  "version": "0.1.0",
+  "identifier": "dev.courtside.nba-watch",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Courtside · NBA Watch",
+        "width": 1280,
+        "height": 900,
+        "minWidth": 800,
+        "minHeight": 650,
+        "backgroundColor": "#f7f8fb"
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' asset: http://asset.localhost https://a.espncdn.com data:; connect-src ipc: http://ipc.localhost https://site.api.espn.com",
+      "capabilities": ["main"]
+    }
+  },
+  "bundle": {
+    "active": false,
+    "resources": ["resources/libmpv-2.dll"]
+  }
+}

@@ -1,0 +1,1 @@
+{"main":{"identifier":"main","description":"Main app window; native operations use typed Rust commands.","local":true,"windows":["main"],"permissions":["core:default"]}}
