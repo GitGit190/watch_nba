@@ -690,26 +690,10 @@ export default function App() {
     { weekday: "long", month: "long", day: "numeric" },
   );
   const listed = gamesForDay(games, selectedDay, days.today);
-  const liveCount = games.filter((g) => g.status === "live").length;
   const hasSession = player.gameId !== null && player.status !== "idle";
   return (
     <div className="app-shell">
       <div className="app-main">
-        <header className="topbar">
-          <button className="wordmark" onClick={goHome}>
-            courtside<span>NBA WATCH</span>
-          </button>
-          <div className="topbar-right">
-            <span className="season">2026—27 SEASON</span>
-            <span className="header-divider" />
-            <span className="local-zone">
-              <Clock3 size={13} />
-              {Intl.DateTimeFormat()
-                .resolvedOptions()
-                .timeZone.replaceAll("_", " ")}
-            </span>
-          </div>
-        </header>
         <nav className="tab-strip" aria-label="App tabs">
           <button
             className={"app-tab " + (view === "games" ? "active" : "")}
@@ -763,20 +747,6 @@ export default function App() {
         >
           {view === "games" ? (
             <>
-              <div className="page-heading">
-                <div>
-                  <div className="eyebrow">THE DAILY LINEUP</div>
-                  <h1>Every game. Your court.</h1>
-                  <p>
-                    Your NBA day, all in one place. Pick a matchup and settle
-                    in.
-                  </p>
-                </div>
-                <div className="today-stamp">
-                  <span className="live-dot" />
-                  {liveCount ? liveCount + " live now" : "Ready for tip-off"}
-                </div>
-              </div>
               <div className="schedule-toolbar">
                 <div className="day-tabs">
                   <button
@@ -879,10 +849,6 @@ export default function App() {
                 </span>
                 <span>Click a matchup for stats. Watch on your terms.</span>
               </footer>
-              <div className="bottom-note">
-                <span className="mini-ball">◉</span>
-                <span>Good basketball. Less noise.</span>
-              </div>
             </>
           ) : game ? (
             <>

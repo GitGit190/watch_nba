@@ -154,7 +154,7 @@ await page.route("https://site.api.espn.com/**", async (route) => {
   else await route.fulfill({ json: { events } });
 });
 await page.goto("http://127.0.0.1:1420/", {waitUntil:"domcontentloaded",timeout:60000});
-await page.getByRole("heading", { name: "Every game. Your court." }).waitFor();
+await page.getByRole("button", { name: "Today", exact: false }).waitFor();
 await page.locator(".game-card").first().waitFor();
 if ((await page.locator(".game-card").count()) !== 3)
   throw Error("Expected deduplicated cards");
