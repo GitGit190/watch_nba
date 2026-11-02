@@ -21,7 +21,6 @@ import {
   RefreshCw,
   RotateCcw,
   RotateCw,
-  Settings2,
   Square,
   Trophy,
   Volume2,
@@ -431,8 +430,6 @@ export default function App() {
   const [submitting, setSubmitting] = useState(false);
   const [player, setPlayer] = useState<PlaybackState>(idlePlayer);
   const [native, setNative] = useState<NativeInfo | null>(null);
-  const [showHelp, setShowHelp] = useState(false);
-  const [settings, setSettings] = useState(false);
   const game = games.find((g) => g.id === gameId) ?? null;
   const activeGame = games.find((g) => g.id === player.gameId);
   const drafts = useRef(new Map<string, PlaybackRequest>());
@@ -697,64 +694,6 @@ export default function App() {
   const hasSession = player.gameId !== null && player.status !== "idle";
   return (
     <div className="app-shell">
-      <aside className="rail">
-        <button className="brand" onClick={goHome} aria-label="Courtside home">
-          <span className="basketball-mark">◉</span>
-        </button>
-        <div className="rail-nav">
-          <button
-            className={view === "games" ? "selected" : ""}
-            onClick={goHome}
-            title="Games"
-            aria-label="Games"
-          >
-            <CalendarDays size={21} />
-          </button>
-          <button
-            className={view !== "games" ? "selected" : ""}
-            onClick={() => (game ? setView("details") : goHome())}
-            title="Game stats"
-            aria-label="Game stats"
-          >
-            <Activity size={21} />
-          </button>
-        </div>
-        <div className="rail-bottom">
-          <button
-            title="Help"
-            aria-label="Help"
-            onClick={() => {
-              setShowHelp(true);
-              void api.setViewport({
-                x: 0,
-                y: 0,
-                width: 0,
-                height: 0,
-                visible: false,
-              });
-            }}
-          >
-            <CircleHelp size={20} />
-          </button>
-          <button
-            title="Settings"
-            aria-label="Settings"
-            onClick={() => {
-              setSettings(true);
-              void api.setViewport({
-                x: 0,
-                y: 0,
-                width: 0,
-                height: 0,
-                visible: false,
-              });
-            }}
-          >
-            <Settings2 size={20} />
-          </button>
-          <span className="avatar">ME</span>
-        </div>
-      </aside>
       <div className="app-main">
         <header className="topbar">
           <button className="wordmark" onClick={goHome}>
@@ -1336,80 +1275,6 @@ export default function App() {
           </div>
         )}
       </div>
-      {(showHelp || settings) && (
-        <div className="modal-backdrop">
-          <section className="modal">
-            <button
-              className="modal-close icon-button"
-              aria-label="Close dialog"
-              onClick={() => {
-                setShowHelp(false);
-                setSettings(false);
-                if (nativeVisible) {
-                  const r = video.current?.getBoundingClientRect();
-                  if (r)
-                    void api.setViewport({
-                      x: r.x * devicePixelRatio,
-                      y: r.y * devicePixelRatio,
-                      width: r.width * devicePixelRatio,
-                      height: r.height * devicePixelRatio,
-                      visible: true,
-                    });
-                }
-              }}
-            >
-              <X size={20} />
-            </button>
-            {showHelp ? (
-              <>
-                <div className="eyebrow">WELCOME TO COURTSIDE</div>
-                <h2>A simpler way to watch.</h2>
-                <p>
-                  Choose Today or Tomorrow to find a matchup. Click its card for
-                  stats, or Watch game to enter your stream.
-                </p>
-                <ol>
-                  <li>Open your stream in your browser.</li>
-                  <li>
-                    In Network, find the successful media playlist request.
-                  </li>
-                  <li>
-                    Copy its full Request URL and Referer header into Courtside.
-                  </li>
-                </ol>
-                <p>
-                  Your source stays in memory for this session. Courtside does
-                  not discover streams or keep your access tokens.
-                </p>
-              </>
-            ) : (
-              <>
-                <div className="eyebrow">MAKE IT YOUR COURT</div>
-                <h2>Preferences</h2>
-                <label className="setting-row">
-                  Hide scores
-                  <input
-                    type="checkbox"
-                    checked={hidden}
-                    onChange={(e) => setHidden(e.target.checked)}
-                  />
-                </label>
-                <p className="muted">
-                  Light mode · Local time zone · One active stream
-                </p>
-                <div className="native-warning">
-                  {native?.message ?? "Checking player…"}
-                </div>
-                <p className="muted">
-                  Live statistics may run ahead of your video. Hide scores to
-                  avoid spoilers. Automatic video/stat synchronization is not
-                  enabled.
-                </p>
-              </>
-            )}
-          </section>
-        </div>
-      )}
     </div>
   );
 }
