@@ -80,13 +80,12 @@ button:hover:not(:disabled) {
   align-items: stretch;
   border-bottom: 1px solid var(--border);
   background: #fcfcfe;
-  padding-left: 32px;
   gap: 4px;
   flex-shrink: 0;
   overflow: auto;
 }
 .app-tab {
-  font-size: 11px;
+  font-size: 14px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -336,6 +335,15 @@ h1 {
   place-items: center;
   font-size: 12px;
   font-weight: 700;
+}
+.team-logo.tab {
+  width: 26px;
+  height: 26px;
+}
+.team-logo.tab > span {
+  width: 100%;
+  height: 100%;
+  font-size: 7px;
 }
 .match-center {
   text-align: center;

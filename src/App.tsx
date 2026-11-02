@@ -699,7 +699,7 @@ export default function App() {
             className={"app-tab " + (view === "games" ? "active" : "")}
             onClick={goHome}
           >
-            <CalendarDays size={14} />
+            <CalendarDays size={18} />
             Games
           </button>
           {tabs.map((id) => {
@@ -714,6 +714,8 @@ export default function App() {
                   key={id}
                 >
                   <button
+                    aria-label={`${g.away.name} vs ${g.home.name}`}
+                    title={`${g.away.name} vs ${g.home.name}`}
                     onClick={() => {
                       setGameId(id);
                       setView(player.gameId === id ? "watch" : "details");
@@ -721,11 +723,13 @@ export default function App() {
                     }}
                   >
                     {player.gameId === id ? (
-                      <Radio size={13} />
+                      <Radio size={16} />
                     ) : (
-                      <Activity size={13} />
+                      <Activity size={16} />
                     )}{" "}
-                    {g.away.abbreviation} vs {g.home.abbreviation}
+                    <Logo team={g.away} size="tab" />
+                    <span>vs</span>
+                    <Logo team={g.home} size="tab" />
                   </button>
                   <button
                     className="close-tab"
@@ -738,8 +742,6 @@ export default function App() {
               )
             );
           })}
-          <span className="tabs-spacer" />
-          <span className="personal-label">YOUR COURTSIDE SEAT</span>
         </nav>
         <main
           className={"content " + (view === "watch" ? "watch-content" : "")}
@@ -789,7 +791,6 @@ export default function App() {
                 <h2>{dateHeading}</h2>
                 <span>
                   {listed.length} {listed.length === 1 ? "GAME" : "GAMES"}
-                  <span className="dot-separator">·</span>LOCAL TIMES
                 </span>
               </div>
               {scheduleError && (
