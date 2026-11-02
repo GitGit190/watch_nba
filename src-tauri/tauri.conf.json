@@ -15,7 +15,9 @@
         "label": "main",
         "title": "Courtside · NBA Watch",
         "width": 1280,
-        "height": 900,
+        "height": 720,
+        "decorations": false,
+        "maximizable": false,
         "backgroundColor": "#f7f8fb"
       }
     ],

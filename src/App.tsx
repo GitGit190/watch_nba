@@ -3,7 +3,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
   Activity,
-  ArrowLeft,
   ArrowRight,
   CalendarDays,
   Check,
@@ -16,6 +15,8 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Pause,
+  Pin,
+  PinOff,
   Play,
   Radio,
   RefreshCw,
@@ -156,13 +157,15 @@ function GameCard({
           <span className="venue-dot" />
           {game.venue}
         </span>
-        {game.status == "live" ?
+        {game.status == "live" ? (
           <button className="watch-button" onClick={onWatch}>
             <Play size={13} fill="currentColor" />
             Watch game
             <ArrowRight size={14} />
-          </button> : <></>
-        } 
+          </button>
+        ) : (
+          <></>
+        )}
       </div>
     </article>
   );
@@ -430,7 +433,15 @@ export default function App() {
   const [stats, setStats] = useState<GameStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsError, setStatsError] = useState("");
-  const [sidebar, setSidebar] = useState(true);
+  const [sidebar, setSidebar] = useState(false);
+  const [alwaysOnTop, setAlwaysOnTop] = useState(false);
+  const [overlayPending, setOverlayPending] = useState(false);
+  const [overlayError, setOverlayError] = useState("");
+  const [tabsHidden, setTabsHidden] = useState(false);
+  const [navigationShown, setNavigationShown] = useState(true);
+  const [navigationFocused, setNavigationFocused] = useState(false);
+  const topbar = useRef<HTMLDivElement>(null);
+  const statsPanel = useRef<HTMLElement>(null);
   const [sourceOpen, setSourceOpen] = useState(false);
   const [formUrl, setFormUrl] = useState("");
   const [formReferrer, setFormReferrer] = useState("");
@@ -567,6 +578,33 @@ export default function App() {
     player.gameId === gameId &&
     ["loading", "playing", "buffering", "paused"].includes(player.status);
   useEffect(() => {
+    if (!api.desktop) return;
+    let disposed = false;
+    const subscriptions = [
+      listen<boolean>("navigation-visible", (e) =>
+        setNavigationShown(e.payload),
+      ),
+      listen<string>("player-shortcut", (e) => {
+        setNavigationShown(true);
+        if (e.payload === "tabs") setTabsHidden((value) => !value);
+        if (e.payload === "stats") setSidebar((value) => !value);
+      }),
+    ];
+    const cleanup: (() => void)[] = [];
+    subscriptions.forEach(
+      (subscription) =>
+        void subscription.then((unlisten) => {
+          if (disposed) unlisten();
+          else cleanup.push(unlisten);
+        }),
+    );
+    return () => {
+      disposed = true;
+      cleanup.forEach((unlisten) => unlisten());
+    };
+  }, []);
+  const overlayShown = navigationShown || navigationFocused;
+  useEffect(() => {
     const el = video.current;
     if (!el || !api.desktop) {
       void api.setViewport({ x: 0, y: 0, width: 0, height: 0, visible: false });
@@ -582,8 +620,19 @@ export default function App() {
         void api
           .setViewport({
             clipTop: Math.round(
-              Math.max(0, (bounds?.top ?? r.top) - r.top) * scale,
+              (nativeVisible
+                ? overlayShown
+                  ? (topbar.current?.offsetHeight ?? 0)
+                  : 0
+                : Math.max(0, (bounds?.top ?? r.top) - r.top)) * scale,
             ),
+            clipRight:
+              nativeVisible && sidebar
+                ? Math.round(
+                    (statsPanel.current?.getBoundingClientRect().width ?? 0) *
+                      scale,
+                  )
+                : 0,
             clipBottom: Math.round(
               Math.max(0, r.bottom - (bounds?.bottom ?? r.bottom)) * scale,
             ),
@@ -599,6 +648,8 @@ export default function App() {
     sync();
     const observer = new ResizeObserver(sync);
     observer.observe(el);
+    if (topbar.current) observer.observe(topbar.current);
+    if (statsPanel.current) observer.observe(statsPanel.current);
     window.addEventListener("resize", sync);
     document.addEventListener("scroll", sync, true);
     return () => {
@@ -606,13 +657,19 @@ export default function App() {
       observer.disconnect();
       window.removeEventListener("resize", sync);
       document.removeEventListener("scroll", sync, true);
-      void api.setViewport({ x: 0, y: 0, width: 0, height: 0, visible: false });
     };
-  }, [nativeVisible, sidebar, view, sourceVisible, gameId]);
+  }, [nativeVisible, sidebar, view, sourceVisible, gameId, overlayShown]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement).matches("input,textarea,select")) return;
       if (e.key === "Escape") void api.fullscreen(true);
+      if (view === "watch" && e.key.toLowerCase() === "t") {
+        setTabsHidden((value) => !value);
+        setNavigationShown(true);
+        void api.windowAction("reveal");
+      }
+      if (view === "watch" && e.key.toLowerCase() === "f")
+        void api.fullscreen();
       if (view === "watch" && e.key.toLowerCase() === "s")
         setSidebar((s) => !s);
       if (view === "watch" && e.code === "Space") {
@@ -697,64 +754,190 @@ export default function App() {
   const listed = gamesForDay(games, selectedDay, days.today);
   const hasSession = player.gameId !== null && player.status !== "idle";
   return (
-    <div className="app-shell">
+    <div className={"app-shell" + (nativeVisible ? " compact-player" : "")}>
       <div className="app-main">
-        <nav className="tab-strip" aria-label="App tabs">
-          <button
-            className={"app-tab " + (view === "games" ? "active" : "")}
-            onClick={goHome}
-          >
-            <CalendarDays size={18} />
-            Games
-          </button>
-          {tabs.map((id) => {
-            const g = games.find((x) => x.id === id);
-            return (
-              g && (
-                <div
-                  className={
-                    "app-tab game-tab " +
-                    (view !== "games" && id === gameId ? "active" : "")
-                  }
-                  key={id}
-                >
-                  <button
-                    aria-label={`${g.away.name} vs ${g.home.name}`}
-                    title={`${g.away.name} vs ${g.home.name}`}
-                    onClick={() => {
-                      setGameId(id);
-                      setView(player.gameId === id ? "watch" : "details");
-                      setSourceOpen(false);
-                    }}
+        <div
+          ref={topbar}
+          className={
+            "window-toolbar" +
+            (nativeVisible && !overlayShown ? " toolbar-hidden" : "") +
+            (nativeVisible && tabsHidden ? " tabs-hidden" : "")
+          }
+          onKeyDownCapture={() => setNavigationFocused(true)}
+          onFocusCapture={(e) =>
+            setNavigationFocused(e.target.matches(":focus-visible"))
+          }
+          onBlurCapture={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node))
+              setNavigationFocused(false);
+          }}
+        >
+          <nav className="tab-strip" aria-label="App tabs">
+            <button
+              className={"app-tab " + (view === "games" ? "active" : "")}
+              onClick={goHome}
+            >
+              <CalendarDays size={18} />
+              Games
+            </button>
+            {tabs.map((id) => {
+              const g = games.find((x) => x.id === id);
+              return (
+                g && (
+                  <div
+                    className={
+                      "app-tab game-tab " +
+                      (view !== "games" && id === gameId ? "active" : "")
+                    }
+                    key={id}
                   >
-                    {player.gameId === id ? (
-                      <Radio size={16} />
-                    ) : (
-                      <Activity size={16} />
-                    )}{" "}
-                    <Logo team={g.away} size="tab" />
-                    <svg
-                      className="matchup-divider"
-                      viewBox="0 0 16 28"
-                      fill="none"
-                      aria-hidden="true"
+                    <button
+                      aria-label={`${g.away.name} vs ${g.home.name}`}
+                      title={`${g.away.name} vs ${g.home.name}`}
+                      onClick={() => {
+                        setGameId(id);
+                        setView(player.gameId === id ? "watch" : "details");
+                        setSourceOpen(false);
+                      }}
                     >
-                      <path d="M12 2 5 11 11 15 4 26" />
-                    </svg>
-                    <Logo team={g.home} size="tab" />
-                  </button>
-                  <button
-                    className="close-tab"
-                    aria-label={"Close " + g.away.abbreviation + " tab"}
-                    onClick={() => closeTab(id)}
-                  >
-                    <X size={12} />
-                  </button>
-                </div>
-              )
-            );
-          })}
-        </nav>
+                      {player.gameId === id ? (
+                        <Radio size={16} />
+                      ) : (
+                        <Activity size={16} />
+                      )}{" "}
+                      <Logo team={g.away} size="tab" />
+                      <svg
+                        className="matchup-divider"
+                        viewBox="0 0 16 28"
+                        fill="none"
+                        aria-hidden="true"
+                      >
+                        <path d="M12 2 5 11 11 15 4 26" />
+                      </svg>
+                      <Logo team={g.home} size="tab" />
+                    </button>
+                    <button
+                      className="close-tab"
+                      aria-label={"Close " + g.away.abbreviation + " tab"}
+                      onClick={() => closeTab(id)}
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                )
+              );
+            })}
+          </nav>
+          <div
+            className="window-drag"
+            aria-label="Drag window"
+            onMouseDown={(e) => {
+              if (e.button === 0 && e.detail === 1)
+                void api.windowAction("drag");
+            }}
+            onDoubleClick={() => void api.windowAction("fit")}
+          />
+          <div className="window-actions">
+            {nativeVisible && (
+              <>
+                <button
+                  className="text-button"
+                  onClick={() => setTabsHidden((value) => !value)}
+                  aria-pressed={tabsHidden}
+                >
+                  {tabsHidden ? "Show tabs" : "Hide tabs"}
+                </button>
+                <button className="text-button" onClick={goHome}>
+                  Games
+                </button>
+                <button
+                  className="text-button"
+                  onClick={() => setSidebar((value) => !value)}
+                  aria-pressed={sidebar}
+                >
+                  Stats
+                </button>
+                <button
+                  className="text-button"
+                  onClick={() => selectGame(game!, true)}
+                >
+                  Source
+                </button>
+                <button
+                  className="icon-button"
+                  title="Stop playback"
+                  aria-label="Stop playback"
+                  onClick={() => perform("stop")}
+                >
+                  <Square size={14} />
+                </button>
+                <button
+                  className="icon-button"
+                  title="Fullscreen"
+                  aria-label="Fullscreen"
+                  onClick={() => void api.fullscreen()}
+                >
+                  <Maximize2 size={16} />
+                </button>
+              </>
+            )}
+            <button
+              className="icon-button overlay-toggle"
+              title={
+                alwaysOnTop
+                  ? "Turn off always on top"
+                  : "Keep window always on top"
+              }
+              aria-label="Always on top"
+              aria-pressed={alwaysOnTop}
+              disabled={!api.desktop || overlayPending}
+              onClick={async () => {
+                const next = !alwaysOnTop;
+                setOverlayPending(true);
+                setOverlayError("");
+                try {
+                  await api.setWindowOverlay(next);
+                  setAlwaysOnTop(next);
+                } catch (error) {
+                  setOverlayError(String(error));
+                } finally {
+                  setOverlayPending(false);
+                }
+              }}
+            >
+              {alwaysOnTop ? <PinOff size={16} /> : <Pin size={16} />}
+            </button>
+            {overlayError && (
+              <span className="window-action-error" role="alert">
+                {overlayError}
+              </span>
+            )}
+            <button
+              className="icon-button"
+              title="Minimize"
+              aria-label="Minimize"
+              onClick={() => void api.windowAction("minimize")}
+            >
+              −
+            </button>
+            <button
+              className="icon-button"
+              title="Fit window to screen"
+              aria-label="Fit window to screen"
+              onClick={() => void api.windowAction("fit")}
+            >
+              <Square size={14} />
+            </button>
+            <button
+              className="icon-button"
+              title="Close window"
+              aria-label="Close window"
+              onClick={() => void api.windowAction("close")}
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </div>
         <main
           className={
             "content " +
@@ -933,16 +1116,6 @@ export default function App() {
                     <div className="video-stage" ref={video}>
                       {sourceVisible ? (
                         <div className="source-card">
-                          <div className="source-icon">
-                            <Play size={22} />
-                          </div>
-                          <div className="eyebrow">YOUR STREAM. YOUR SEAT.</div>
-                          <h2>Bring the game courtside.</h2>
-                          <p>
-                            Paste the media request from your browser.
-                            <br />
-                            We'll take it from here.
-                          </p>
                           <form onSubmit={submit}>
                             <label htmlFor="stream-url">
                               Request URL <span>REQUIRED</span>
@@ -1191,7 +1364,7 @@ export default function App() {
                     </div>
                   </section>
                   {sidebar && (
-                    <aside className="stats-sidebar">
+                    <aside className="stats-sidebar" ref={statsPanel}>
                       <div className="sidebar-heading">
                         <h2>Courtside stats</h2>
                         <button

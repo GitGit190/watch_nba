@@ -17,6 +17,8 @@ fn main() {
             player::player_state,
             player::player_control,
             windowing::set_video_rect,
+            windowing::set_window_overlay,
+            windowing::window_action,
             windowing::toggle_fullscreen
         ])
         .setup(|app| {
@@ -26,6 +28,7 @@ fn main() {
                     .get_webview_window("main")
                     .ok_or("Missing main window")?;
                 let hwnd = window.hwnd()?.0 as isize;
+                windowing::native::install(app.handle().clone(), hwnd);
                 let video = windowing::create(hwnd)?;
                 app.state::<windowing::VideoHost>()
                     .handle

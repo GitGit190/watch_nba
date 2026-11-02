@@ -222,6 +222,12 @@ struct EndFile {
     playlist_insert_id: i64,
     playlist_insert_num_entries: c_int,
 }
+#[repr(C)]
+struct ClientMessage {
+    num_args: c_int,
+    args: *const *const c_char,
+}
+
 type Create = unsafe extern "C" fn() -> *mut c_void;
 type Initialize = unsafe extern "C" fn(*mut c_void) -> c_int;
 type SetOption = unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> c_int;
@@ -251,7 +257,7 @@ fn trace(stage: &str) {
     }
 }
 impl Mpv {
-    fn new(path: PathBuf, hwnd: usize) -> Result<Self, String> {
+    fn new(path: PathBuf, hwnd: usize, app: &AppHandle) -> Result<Self, String> {
         unsafe {
             trace("loading DLL");
             let library = Library::new(path)
@@ -297,8 +303,15 @@ impl Mpv {
                 ("config", "no"),
                 ("terminal", "no"),
                 ("input-default-bindings", "no"),
-                ("input-vo-keyboard", "no"),
-                ("osc", "no"),
+                ("input-vo-keyboard", "yes"),
+                ("input-cursor", "yes"),
+                ("cursor-autohide", "2000"),
+                ("load-scripts", "yes"),
+                (
+                    "script-opts",
+                    "osc-hidetimeout=2000,osc-fadeduration=200,osc-windowcontrols=no",
+                ),
+                ("osc", "yes"),
                 ("idle", "yes"),
                 ("keep-open", "no"),
                 ("vo", "gpu"),
@@ -315,6 +328,11 @@ impl Mpv {
             ] {
                 player.option(name, value)?;
             }
+            let script_dir = app.path().app_cache_dir().map_err(|e| e.to_string())?;
+            std::fs::create_dir_all(&script_dir).map_err(|e| e.to_string())?;
+            let script = script_dir.join("courtside-player-ui.lua");
+            std::fs::write(&script, include_str!("player-ui.lua")).map_err(|e| e.to_string())?;
+            player.option("scripts", &script.to_string_lossy())?;
             player.option("wid", &hwnd.to_string())?;
             trace("initializing core");
             if init(handle) < 0 {
@@ -423,7 +441,7 @@ fn run_player(
                 };
                 publish(&app, &snapshot, &state);
                 if core.is_none() {
-                    match Mpv::new(path.clone(), hwnd) {
+                    match Mpv::new(path.clone(), hwnd, &app) {
                         Ok(p) => core = Some(p),
                         Err(e) => {
                             state.status = "error".into();
@@ -498,7 +516,7 @@ fn run_player(
                     break;
                 }
                 match event.event_id {
-                    16 => {
+                    2 => {
                         if !event.data.is_null() {
                             let log = unsafe { &*(event.data as *const LogMessage) };
                             if !log.text.is_null() {
@@ -516,6 +534,35 @@ fn run_player(
                                     .join(" ");
                                 if cfg!(debug_assertions) {
                                     eprintln!("player: {}", clean);
+                                }
+                            }
+                        }
+                    }
+                    16 => {
+                        if !event.data.is_null() {
+                            let message = unsafe { &*(event.data as *const ClientMessage) };
+                            if message.num_args == 2 && !message.args.is_null() {
+                                let args = unsafe { std::slice::from_raw_parts(message.args, 2) };
+                                if !args[0].is_null() && !args[1].is_null() {
+                                    let name = unsafe { CStr::from_ptr(args[0]) }.to_string_lossy();
+                                    let action =
+                                        unsafe { CStr::from_ptr(args[1]) }.to_string_lossy();
+                                    if name == "courtside-ui" {
+                                        if action == "fullscreen" || action == "escape" {
+                                            if let Some(window) = app.get_webview_window("main") {
+                                                let full = window.is_fullscreen().unwrap_or(false);
+                                                let next = action != "escape" && !full;
+                                                #[cfg(windows)]
+                                                crate::windowing::native::RATIO_SUSPENDED
+                                                    .store(next, Ordering::Relaxed);
+                                                let _ = window.set_fullscreen(next);
+                                            }
+                                        } else if action == "tabs" || action == "stats" {
+                                            #[cfg(windows)]
+                                            crate::windowing::native::reveal_navigation();
+                                            let _ = app.emit("player-shortcut", action.as_ref());
+                                        }
+                                    }
                                 }
                             }
                         }

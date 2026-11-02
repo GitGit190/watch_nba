@@ -98,3 +98,21 @@ libmpv build: `mpv-dev-x86_64-20261021-git-e471496c56`, obtained from the shinch
 Performance status: the current full WebView2 interface does not meet the under-100-MB idle target. See VALIDATION.md for measurements; the native player and WebView2 helpers must both be counted.
 
 run for de
+
+## Compact viewing (Windows)
+
+The borderless window opens at 1280×720 and maintains 16:9 during resizing.
+Drag the empty part of the top bar to move it. The square window action fits
+it to the current monitor while keeping 16:9; fullscreen uses the whole monitor.
+
+During playback, video fills the window. Move the mouse to reveal navigation
+and mpv's fading playback controls. Navigation hides after two seconds of
+inactivity. Hide/Show tabs is in the top bar; T toggles tabs, S toggles stats,
+F or double-click toggles fullscreen, Escape exits fullscreen, Space pauses,
+M mutes, and Left/Right seek five seconds when supported. Tabs and stats cover
+the picture temporarily without changing the video surface size. Non-16:9
+sources retain their original proportions with black bars.
+
+The navigation overlay is opaque and uses the existing webview, exposed through
+the native video window region. Playback controls are rendered by mpv, rather
+than a second webview or JavaScript video frames.

@@ -53,6 +53,7 @@ export const setViewport = (rect: {
   width: number;
   height: number;
   visible: boolean;
+  clipRight?: number;
   clipTop?: number;
   clipBottom?: number;
 }): Promise<void> =>
@@ -70,3 +71,11 @@ export async function fetchCachedSchedule(
     return null;
   }
 }
+
+export const windowAction = (
+  action: "close" | "minimize" | "fit" | "drag" | "reveal",
+): Promise<void> =>
+  desktop ? invoke("window_action", { action }) : Promise.resolve();
+
+export const setWindowOverlay = (enabled: boolean): Promise<void> =>
+  desktop ? invoke("set_window_overlay", { enabled }) : Promise.resolve();

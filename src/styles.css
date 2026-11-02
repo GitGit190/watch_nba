@@ -90,7 +90,7 @@ button:hover:not(:disabled) {
   background: #fcfcfe;
   gap: 4px;
   flex-shrink: 0;
-  overflow: auto;
+  overflow: horizontal;
 }
 .app-tab {
   font-size: var(--font-label);
@@ -165,13 +165,6 @@ button:hover:not(:disabled) {
   min-height: 0;
   scrollbar-width: thin;
   scrollbar-color: #d9dde5 transparent;
-}
-.eyebrow {
-  font-size: var(--font-caption);
-  font-weight: 700;
-  letter-spacing: 1.9px;
-  color: var(--accent);
-  margin-bottom: 10px;
 }
 h1 {
   font-family:
@@ -885,16 +878,6 @@ th:first-child {
   border-radius: 10px;
   box-shadow: 0 8px 35px #0002;
 }
-.source-icon {
-  width: 42px;
-  height: 42px;
-  background: #fcf0e9;
-  color: var(--accent);
-  border-radius: 13px;
-  display: grid;
-  place-items: center;
-  margin: 0 auto 17px;
-}
 .source-card > .eyebrow {
   text-align: center;
   font-size: var(--font-caption);
@@ -1252,4 +1235,132 @@ th:first-child {
   align-items: center;
   flex-wrap: wrap;
   gap: 16px;
+}
+
+/* Native video stays full-size; regions expose these opaque web UI overlays. */
+.window-toolbar {
+  display: flex;
+  align-items: center;
+  flex: 0 0 45px;
+  height: 45px;
+  min-width: 0;
+  background: #fcfcfe;
+  z-index: 5;
+}
+.window-toolbar .tab-strip {
+  min-width: 0;
+  flex-shrink: 1;
+}
+.window-drag {
+  flex: 1;
+  min-width: 24px;
+  height: 100%;
+  cursor: move;
+}
+.window-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.window-actions .text-button {
+  white-space: nowrap;
+}
+.window-actions button {
+  height: 36px;
+}
+.compact-player {
+  background: #000;
+}
+.compact-player .window-toolbar {
+  position: absolute;
+  inset: 0 0 auto;
+}
+.compact-player .toolbar-hidden {
+  visibility: hidden;
+  pointer-events: none;
+}
+.compact-player .tabs-hidden .tab-strip {
+  display: none;
+}
+.compact-player .watch-content {
+  padding: 0;
+  overflow: hidden;
+  position: relative;
+}
+.compact-player .workspace-heading,
+.compact-player .player-controls,
+.compact-player .player-caption {
+  display: none;
+}
+.compact-player .watch-layout,
+.compact-player .player-section {
+  display: block;
+  min-height: 0;
+  position: absolute;
+  inset: 0;
+}
+.compact-player .video-stage {
+  position: absolute;
+  inset: 0;
+  min-height: 0;
+  border-radius: 0;
+  background: #000;
+}
+.compact-player .stats-sidebar {
+  position: absolute;
+  top: 45px;
+  right: 0;
+  bottom: 0;
+  width: min(305px, 80vw);
+  z-index: 4;
+  border-radius: 0;
+}
+@media (max-width: 700px) {
+  .window-actions {
+    gap: 0;
+  }
+  .window-actions .text-button {
+    font-size: var(--font-caption);
+    padding: 4px;
+  }
+  .window-drag {
+    min-width: 12px;
+  }
+  .compact-player .window-toolbar {
+    height: auto;
+    min-height: 45px;
+    flex-wrap: wrap;
+  }
+  .compact-player .window-toolbar .tab-strip {
+    flex: 1 1 100%;
+  }
+  .compact-player .stats-sidebar {
+    top: 90px;
+  }
+}
+
+.window-actions {
+  max-width: 100%;
+}
+@media (max-width: 700px) {
+  .window-actions {
+    flex-wrap: wrap;
+  }
+}
+
+.overlay-toggle[aria-pressed="true"] {
+  color: var(--accent);
+  background: #fbefe9;
+}
+.window-action-error {
+  position: absolute;
+  top: 45px;
+  right: 8px;
+  max-width: min(28rem, 90vw);
+  padding: 8px 12px;
+  color: #ba4d39;
+  background: #fff0ec;
+  font-size: var(--font-label);
+  z-index: 6;
 }
