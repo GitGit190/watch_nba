@@ -97,3 +97,4 @@ libmpv build: `mpv-dev-x86_64-20261021-git-e471496c56`, obtained from the shinch
 
 Performance status: the current full WebView2 interface does not meet the under-100-MB idle target. See VALIDATION.md for measurements; the native player and WebView2 helpers must both be counted.
 
+run for de

@@ -47,12 +47,19 @@ import {
   type Team,
 } from "./types";
 
+const unpaddedLogoIds = new Set(["3", "13", "18", "19", "30", "25"]);
+
 function Logo({ team, size = "normal" }: { team: Team; size?: string }) {
   const [failed, setFailed] = useState(false);
   return (
     <div
       className={"team-logo " + size}
-      style={{ "--team-color": team.color } as React.CSSProperties}
+      style={
+        {
+          "--team-color": team.color,
+          "--logo-padding": unpaddedLogoIds.has(team.id) ? "0%" : "10%",
+        } as React.CSSProperties
+      }
     >
       {team.logo && !failed ? (
         <img
@@ -149,11 +156,13 @@ function GameCard({
           <span className="venue-dot" />
           {game.venue}
         </span>
-        <button className="watch-button" onClick={onWatch}>
-          <Play size={13} fill="currentColor" />
-          Watch game
-          <ArrowRight size={14} />
-        </button>
+        {game.status == "live" ?
+          <button className="watch-button" onClick={onWatch}>
+            <Play size={13} fill="currentColor" />
+            Watch game
+            <ArrowRight size={14} />
+          </button> : <></>
+        } 
       </div>
     </article>
   );
@@ -685,10 +694,6 @@ export default function App() {
   const perform = (action: string, value?: number) => {
     void api.control(action, value).catch((e) => setFormError(String(e)));
   };
-  const dateHeading = new Date(selectedDay + "T12:00:00").toLocaleDateString(
-    [],
-    { weekday: "long", month: "long", day: "numeric" },
-  );
   const listed = gamesForDay(games, selectedDay, days.today);
   const hasSession = player.gameId !== null && player.status !== "idle";
   return (
@@ -728,7 +733,14 @@ export default function App() {
                       <Activity size={16} />
                     )}{" "}
                     <Logo team={g.away} size="tab" />
-                    <span>vs</span>
+                    <svg
+                      className="matchup-divider"
+                      viewBox="0 0 16 28"
+                      fill="none"
+                      aria-hidden="true"
+                    >
+                      <path d="M12 2 5 11 11 15 4 26" />
+                    </svg>
                     <Logo team={g.home} size="tab" />
                   </button>
                   <button
@@ -744,29 +756,37 @@ export default function App() {
           })}
         </nav>
         <main
-          className={"content " + (view === "watch" ? "watch-content" : "")}
+          className={
+            "content " +
+            (view === "watch"
+              ? "watch-content"
+              : view === "games"
+                ? "schedule-content"
+                : "")
+          }
           ref={content}
         >
           {view === "games" ? (
             <>
               <div className="schedule-toolbar">
-                <div className="day-tabs">
-                  <button
-                    className={selectedDay === days.today ? "active" : ""}
-                    onClick={() => setSelectedDay(days.today)}
-                  >
-                    Today{" "}
-                    <span>{new Date(days.today + "T12:00:00").getDate()}</span>
-                  </button>
-                  <button
-                    className={selectedDay === days.tomorrow ? "active" : ""}
-                    onClick={() => setSelectedDay(days.tomorrow)}
-                  >
-                    Tomorrow{" "}
-                    <span>
-                      {new Date(days.tomorrow + "T12:00:00").getDate()}
-                    </span>
-                  </button>
+                <div className="schedule-selection">
+                  <div className="day-tabs">
+                    <button
+                      className={selectedDay === days.today ? "active" : ""}
+                      onClick={() => setSelectedDay(days.today)}
+                    >
+                      Today
+                    </button>
+                    <button
+                      className={selectedDay === days.tomorrow ? "active" : ""}
+                      onClick={() => setSelectedDay(days.tomorrow)}
+                    >
+                      Tomorrow
+                    </button>
+                  </div>
+                  <span className="game-count">
+                    {listed.length} {listed.length === 1 ? "GAME" : "GAMES"}
+                  </span>
                 </div>
                 <div className="toolbar-actions">
                   <button
@@ -786,12 +806,6 @@ export default function App() {
                     <RefreshCw size={16} />
                   </button>
                 </div>
-              </div>
-              <div className="date-row">
-                <h2>{dateHeading}</h2>
-                <span>
-                  {listed.length} {listed.length === 1 ? "GAME" : "GAMES"}
-                </span>
               </div>
               {scheduleError && (
                 <div className="notice">
@@ -854,10 +868,6 @@ export default function App() {
           ) : game ? (
             <>
               <div className="workspace-heading">
-                <button className="back-link" onClick={goHome}>
-                  <ArrowLeft size={15} />
-                  All games
-                </button>
                 <div className="workspace-title">
                   <h1>
                     {game.away.city} <span>vs</span> {game.home.city}
