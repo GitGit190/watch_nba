@@ -3,7 +3,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
   Activity,
-  ArrowLeft,
   ArrowRight,
   CalendarDays,
   Check,
@@ -16,12 +15,13 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Pause,
+  Pin,
+  PinOff,
   Play,
   Radio,
   RefreshCw,
   RotateCcw,
   RotateCw,
-  Settings2,
   Square,
   Trophy,
   Volume2,
@@ -48,12 +48,19 @@ import {
   type Team,
 } from "./types";
 
+const unpaddedLogoIds = new Set(["3", "13", "18", "19", "30", "25"]);
+
 function Logo({ team, size = "normal" }: { team: Team; size?: string }) {
   const [failed, setFailed] = useState(false);
   return (
     <div
       className={"team-logo " + size}
-      style={{ "--team-color": team.color } as React.CSSProperties}
+      style={
+        {
+          "--team-color": team.color,
+          "--logo-padding": unpaddedLogoIds.has(team.id) ? "0%" : "10%",
+        } as React.CSSProperties
+      }
     >
       {team.logo && !failed ? (
         <img
@@ -150,11 +157,15 @@ function GameCard({
           <span className="venue-dot" />
           {game.venue}
         </span>
-        <button className="watch-button" onClick={onWatch}>
-          <Play size={13} fill="currentColor" />
-          Watch game
-          <ArrowRight size={14} />
-        </button>
+        {game.status == "live" ? (
+          <button className="watch-button" onClick={onWatch}>
+            <Play size={13} fill="currentColor" />
+            Watch game
+            <ArrowRight size={14} />
+          </button>
+        ) : (
+          <></>
+        )}
       </div>
     </article>
   );
@@ -422,7 +433,15 @@ export default function App() {
   const [stats, setStats] = useState<GameStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsError, setStatsError] = useState("");
-  const [sidebar, setSidebar] = useState(true);
+  const [sidebar, setSidebar] = useState(false);
+  const [alwaysOnTop, setAlwaysOnTop] = useState(false);
+  const [overlayPending, setOverlayPending] = useState(false);
+  const [overlayError, setOverlayError] = useState("");
+  const [tabsHidden, setTabsHidden] = useState(false);
+  const [navigationShown, setNavigationShown] = useState(true);
+  const [navigationFocused, setNavigationFocused] = useState(false);
+  const topbar = useRef<HTMLDivElement>(null);
+  const statsPanel = useRef<HTMLElement>(null);
   const [sourceOpen, setSourceOpen] = useState(false);
   const [formUrl, setFormUrl] = useState("");
   const [formReferrer, setFormReferrer] = useState("");
@@ -431,8 +450,6 @@ export default function App() {
   const [submitting, setSubmitting] = useState(false);
   const [player, setPlayer] = useState<PlaybackState>(idlePlayer);
   const [native, setNative] = useState<NativeInfo | null>(null);
-  const [showHelp, setShowHelp] = useState(false);
-  const [settings, setSettings] = useState(false);
   const game = games.find((g) => g.id === gameId) ?? null;
   const activeGame = games.find((g) => g.id === player.gameId);
   const drafts = useRef(new Map<string, PlaybackRequest>());
@@ -561,6 +578,33 @@ export default function App() {
     player.gameId === gameId &&
     ["loading", "playing", "buffering", "paused"].includes(player.status);
   useEffect(() => {
+    if (!api.desktop) return;
+    let disposed = false;
+    const subscriptions = [
+      listen<boolean>("navigation-visible", (e) =>
+        setNavigationShown(e.payload),
+      ),
+      listen<string>("player-shortcut", (e) => {
+        setNavigationShown(true);
+        if (e.payload === "tabs") setTabsHidden((value) => !value);
+        if (e.payload === "stats") setSidebar((value) => !value);
+      }),
+    ];
+    const cleanup: (() => void)[] = [];
+    subscriptions.forEach(
+      (subscription) =>
+        void subscription.then((unlisten) => {
+          if (disposed) unlisten();
+          else cleanup.push(unlisten);
+        }),
+    );
+    return () => {
+      disposed = true;
+      cleanup.forEach((unlisten) => unlisten());
+    };
+  }, []);
+  const overlayShown = navigationShown || navigationFocused;
+  useEffect(() => {
     const el = video.current;
     if (!el || !api.desktop) {
       void api.setViewport({ x: 0, y: 0, width: 0, height: 0, visible: false });
@@ -576,8 +620,19 @@ export default function App() {
         void api
           .setViewport({
             clipTop: Math.round(
-              Math.max(0, (bounds?.top ?? r.top) - r.top) * scale,
+              (nativeVisible
+                ? overlayShown
+                  ? (topbar.current?.offsetHeight ?? 0)
+                  : 0
+                : Math.max(0, (bounds?.top ?? r.top) - r.top)) * scale,
             ),
+            clipRight:
+              nativeVisible && sidebar
+                ? Math.round(
+                    (statsPanel.current?.getBoundingClientRect().width ?? 0) *
+                      scale,
+                  )
+                : 0,
             clipBottom: Math.round(
               Math.max(0, r.bottom - (bounds?.bottom ?? r.bottom)) * scale,
             ),
@@ -593,6 +648,8 @@ export default function App() {
     sync();
     const observer = new ResizeObserver(sync);
     observer.observe(el);
+    if (topbar.current) observer.observe(topbar.current);
+    if (statsPanel.current) observer.observe(statsPanel.current);
     window.addEventListener("resize", sync);
     document.addEventListener("scroll", sync, true);
     return () => {
@@ -600,13 +657,19 @@ export default function App() {
       observer.disconnect();
       window.removeEventListener("resize", sync);
       document.removeEventListener("scroll", sync, true);
-      void api.setViewport({ x: 0, y: 0, width: 0, height: 0, visible: false });
     };
-  }, [nativeVisible, sidebar, view, sourceVisible, gameId]);
+  }, [nativeVisible, sidebar, view, sourceVisible, gameId, overlayShown]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement).matches("input,textarea,select")) return;
       if (e.key === "Escape") void api.fullscreen(true);
+      if (view === "watch" && e.key.toLowerCase() === "t") {
+        setTabsHidden((value) => !value);
+        setNavigationShown(true);
+        void api.windowAction("reveal");
+      }
+      if (view === "watch" && e.key.toLowerCase() === "f")
+        void api.fullscreen();
       if (view === "watch" && e.key.toLowerCase() === "s")
         setSidebar((s) => !s);
       if (view === "watch" && e.code === "Space") {
@@ -688,174 +751,225 @@ export default function App() {
   const perform = (action: string, value?: number) => {
     void api.control(action, value).catch((e) => setFormError(String(e)));
   };
-  const dateHeading = new Date(selectedDay + "T12:00:00").toLocaleDateString(
-    [],
-    { weekday: "long", month: "long", day: "numeric" },
-  );
   const listed = gamesForDay(games, selectedDay, days.today);
-  const liveCount = games.filter((g) => g.status === "live").length;
   const hasSession = player.gameId !== null && player.status !== "idle";
   return (
-    <div className="app-shell">
-      <aside className="rail">
-        <button className="brand" onClick={goHome} aria-label="Courtside home">
-          <span className="basketball-mark">◉</span>
-        </button>
-        <div className="rail-nav">
-          <button
-            className={view === "games" ? "selected" : ""}
-            onClick={goHome}
-            title="Games"
-            aria-label="Games"
-          >
-            <CalendarDays size={21} />
-          </button>
-          <button
-            className={view !== "games" ? "selected" : ""}
-            onClick={() => (game ? setView("details") : goHome())}
-            title="Game stats"
-            aria-label="Game stats"
-          >
-            <Activity size={21} />
-          </button>
-        </div>
-        <div className="rail-bottom">
-          <button
-            title="Help"
-            aria-label="Help"
-            onClick={() => {
-              setShowHelp(true);
-              void api.setViewport({
-                x: 0,
-                y: 0,
-                width: 0,
-                height: 0,
-                visible: false,
-              });
-            }}
-          >
-            <CircleHelp size={20} />
-          </button>
-          <button
-            title="Settings"
-            aria-label="Settings"
-            onClick={() => {
-              setSettings(true);
-              void api.setViewport({
-                x: 0,
-                y: 0,
-                width: 0,
-                height: 0,
-                visible: false,
-              });
-            }}
-          >
-            <Settings2 size={20} />
-          </button>
-          <span className="avatar">ME</span>
-        </div>
-      </aside>
+    <div className={"app-shell" + (nativeVisible ? " compact-player" : "")}>
       <div className="app-main">
-        <header className="topbar">
-          <button className="wordmark" onClick={goHome}>
-            courtside<span>NBA WATCH</span>
-          </button>
-          <div className="topbar-right">
-            <span className="season">2026—27 SEASON</span>
-            <span className="header-divider" />
-            <span className="local-zone">
-              <Clock3 size={13} />
-              {Intl.DateTimeFormat()
-                .resolvedOptions()
-                .timeZone.replaceAll("_", " ")}
-            </span>
-          </div>
-        </header>
-        <nav className="tab-strip" aria-label="App tabs">
-          <button
-            className={"app-tab " + (view === "games" ? "active" : "")}
-            onClick={goHome}
-          >
-            <CalendarDays size={14} />
-            Games
-          </button>
-          {tabs.map((id) => {
-            const g = games.find((x) => x.id === id);
-            return (
-              g && (
-                <div
-                  className={
-                    "app-tab game-tab " +
-                    (view !== "games" && id === gameId ? "active" : "")
-                  }
-                  key={id}
+        <div
+          ref={topbar}
+          className={
+            "window-toolbar" +
+            (nativeVisible && !overlayShown ? " toolbar-hidden" : "") +
+            (nativeVisible && tabsHidden ? " tabs-hidden" : "")
+          }
+          onKeyDownCapture={() => setNavigationFocused(true)}
+          onFocusCapture={(e) =>
+            setNavigationFocused(e.target.matches(":focus-visible"))
+          }
+          onBlurCapture={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node))
+              setNavigationFocused(false);
+          }}
+        >
+          <nav className="tab-strip" aria-label="App tabs">
+            <button
+              className={"app-tab " + (view === "games" ? "active" : "")}
+              onClick={goHome}
+            >
+              <CalendarDays size={18} />
+              Games
+            </button>
+            {tabs.map((id) => {
+              const g = games.find((x) => x.id === id);
+              return (
+                g && (
+                  <div
+                    className={
+                      "app-tab game-tab " +
+                      (view !== "games" && id === gameId ? "active" : "")
+                    }
+                    key={id}
+                  >
+                    <button
+                      aria-label={`${g.away.name} vs ${g.home.name}`}
+                      title={`${g.away.name} vs ${g.home.name}`}
+                      onClick={() => {
+                        setGameId(id);
+                        setView(player.gameId === id ? "watch" : "details");
+                        setSourceOpen(false);
+                      }}
+                    >
+                      {player.gameId === id ? (
+                        <Radio size={16} />
+                      ) : (
+                        <Activity size={16} />
+                      )}{" "}
+                      <Logo team={g.away} size="tab" />
+                      <svg
+                        className="matchup-divider"
+                        viewBox="0 0 16 28"
+                        fill="none"
+                        aria-hidden="true"
+                      >
+                        <path d="M12 2 5 11 11 15 4 26" />
+                      </svg>
+                      <Logo team={g.home} size="tab" />
+                    </button>
+                    <button
+                      className="close-tab"
+                      aria-label={"Close " + g.away.abbreviation + " tab"}
+                      onClick={() => closeTab(id)}
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                )
+              );
+            })}
+          </nav>
+          <div
+            className="window-drag"
+            aria-label="Drag window"
+            onMouseDown={(e) => {
+              if (e.button === 0 && e.detail === 1)
+                void api.windowAction("drag");
+            }}
+            onDoubleClick={() => void api.windowAction("fit")}
+          />
+          <div className="window-actions">
+            {nativeVisible && (
+              <>
+                <button
+                  className="text-button"
+                  onClick={() => setTabsHidden((value) => !value)}
+                  aria-pressed={tabsHidden}
                 >
-                  <button
-                    onClick={() => {
-                      setGameId(id);
-                      setView(player.gameId === id ? "watch" : "details");
-                      setSourceOpen(false);
-                    }}
-                  >
-                    {player.gameId === id ? (
-                      <Radio size={13} />
-                    ) : (
-                      <Activity size={13} />
-                    )}{" "}
-                    {g.away.abbreviation} vs {g.home.abbreviation}
-                  </button>
-                  <button
-                    className="close-tab"
-                    aria-label={"Close " + g.away.abbreviation + " tab"}
-                    onClick={() => closeTab(id)}
-                  >
-                    <X size={12} />
-                  </button>
-                </div>
-              )
-            );
-          })}
-          <span className="tabs-spacer" />
-          <span className="personal-label">YOUR COURTSIDE SEAT</span>
-        </nav>
+                  {tabsHidden ? "Show tabs" : "Hide tabs"}
+                </button>
+                <button className="text-button" onClick={goHome}>
+                  Games
+                </button>
+                <button
+                  className="text-button"
+                  onClick={() => setSidebar((value) => !value)}
+                  aria-pressed={sidebar}
+                >
+                  Stats
+                </button>
+                <button
+                  className="text-button"
+                  onClick={() => selectGame(game!, true)}
+                >
+                  Source
+                </button>
+                <button
+                  className="icon-button"
+                  title="Stop playback"
+                  aria-label="Stop playback"
+                  onClick={() => perform("stop")}
+                >
+                  <Square size={14} />
+                </button>
+                <button
+                  className="icon-button"
+                  title="Fullscreen"
+                  aria-label="Fullscreen"
+                  onClick={() => void api.fullscreen()}
+                >
+                  <Maximize2 size={16} />
+                </button>
+              </>
+            )}
+            <button
+              className="icon-button overlay-toggle"
+              title={
+                alwaysOnTop
+                  ? "Turn off always on top"
+                  : "Keep window always on top"
+              }
+              aria-label="Always on top"
+              aria-pressed={alwaysOnTop}
+              disabled={!api.desktop || overlayPending}
+              onClick={async () => {
+                const next = !alwaysOnTop;
+                setOverlayPending(true);
+                setOverlayError("");
+                try {
+                  await api.setWindowOverlay(next);
+                  setAlwaysOnTop(next);
+                } catch (error) {
+                  setOverlayError(String(error));
+                } finally {
+                  setOverlayPending(false);
+                }
+              }}
+            >
+              {alwaysOnTop ? <PinOff size={16} /> : <Pin size={16} />}
+            </button>
+            {overlayError && (
+              <span className="window-action-error" role="alert">
+                {overlayError}
+              </span>
+            )}
+            <button
+              className="icon-button"
+              title="Minimize"
+              aria-label="Minimize"
+              onClick={() => void api.windowAction("minimize")}
+            >
+              −
+            </button>
+            <button
+              className="icon-button"
+              title="Fit window to screen"
+              aria-label="Fit window to screen"
+              onClick={() => void api.windowAction("fit")}
+            >
+              <Square size={14} />
+            </button>
+            <button
+              className="icon-button"
+              title="Close window"
+              aria-label="Close window"
+              onClick={() => void api.windowAction("close")}
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </div>
         <main
-          className={"content " + (view === "watch" ? "watch-content" : "")}
+          className={
+            "content " +
+            (view === "watch"
+              ? "watch-content"
+              : view === "games"
+                ? "schedule-content"
+                : "")
+          }
           ref={content}
         >
           {view === "games" ? (
             <>
-              <div className="page-heading">
-                <div>
-                  <div className="eyebrow">THE DAILY LINEUP</div>
-                  <h1>Every game. Your court.</h1>
-                  <p>
-                    Your NBA day, all in one place. Pick a matchup and settle
-                    in.
-                  </p>
-                </div>
-                <div className="today-stamp">
-                  <span className="live-dot" />
-                  {liveCount ? liveCount + " live now" : "Ready for tip-off"}
-                </div>
-              </div>
               <div className="schedule-toolbar">
-                <div className="day-tabs">
-                  <button
-                    className={selectedDay === days.today ? "active" : ""}
-                    onClick={() => setSelectedDay(days.today)}
-                  >
-                    Today{" "}
-                    <span>{new Date(days.today + "T12:00:00").getDate()}</span>
-                  </button>
-                  <button
-                    className={selectedDay === days.tomorrow ? "active" : ""}
-                    onClick={() => setSelectedDay(days.tomorrow)}
-                  >
-                    Tomorrow{" "}
-                    <span>
-                      {new Date(days.tomorrow + "T12:00:00").getDate()}
-                    </span>
-                  </button>
+                <div className="schedule-selection">
+                  <div className="day-tabs">
+                    <button
+                      className={selectedDay === days.today ? "active" : ""}
+                      onClick={() => setSelectedDay(days.today)}
+                    >
+                      Today
+                    </button>
+                    <button
+                      className={selectedDay === days.tomorrow ? "active" : ""}
+                      onClick={() => setSelectedDay(days.tomorrow)}
+                    >
+                      Tomorrow
+                    </button>
+                  </div>
+                  <span className="game-count">
+                    {listed.length} {listed.length === 1 ? "GAME" : "GAMES"}
+                  </span>
                 </div>
                 <div className="toolbar-actions">
                   <button
@@ -875,13 +989,6 @@ export default function App() {
                     <RefreshCw size={16} />
                   </button>
                 </div>
-              </div>
-              <div className="date-row">
-                <h2>{dateHeading}</h2>
-                <span>
-                  {listed.length} {listed.length === 1 ? "GAME" : "GAMES"}
-                  <span className="dot-separator">·</span>LOCAL TIMES
-                </span>
               </div>
               {scheduleError && (
                 <div className="notice">
@@ -940,18 +1047,10 @@ export default function App() {
                 </span>
                 <span>Click a matchup for stats. Watch on your terms.</span>
               </footer>
-              <div className="bottom-note">
-                <span className="mini-ball">◉</span>
-                <span>Good basketball. Less noise.</span>
-              </div>
             </>
           ) : game ? (
             <>
               <div className="workspace-heading">
-                <button className="back-link" onClick={goHome}>
-                  <ArrowLeft size={15} />
-                  All games
-                </button>
                 <div className="workspace-title">
                   <h1>
                     {game.away.city} <span>vs</span> {game.home.city}
@@ -1017,16 +1116,6 @@ export default function App() {
                     <div className="video-stage" ref={video}>
                       {sourceVisible ? (
                         <div className="source-card">
-                          <div className="source-icon">
-                            <Play size={22} />
-                          </div>
-                          <div className="eyebrow">YOUR STREAM. YOUR SEAT.</div>
-                          <h2>Bring the game courtside.</h2>
-                          <p>
-                            Paste the media request from your browser.
-                            <br />
-                            We'll take it from here.
-                          </p>
                           <form onSubmit={submit}>
                             <label htmlFor="stream-url">
                               Request URL <span>REQUIRED</span>
@@ -1275,7 +1364,7 @@ export default function App() {
                     </div>
                   </section>
                   {sidebar && (
-                    <aside className="stats-sidebar">
+                    <aside className="stats-sidebar" ref={statsPanel}>
                       <div className="sidebar-heading">
                         <h2>Courtside stats</h2>
                         <button
@@ -1336,80 +1425,6 @@ export default function App() {
           </div>
         )}
       </div>
-      {(showHelp || settings) && (
-        <div className="modal-backdrop">
-          <section className="modal">
-            <button
-              className="modal-close icon-button"
-              aria-label="Close dialog"
-              onClick={() => {
-                setShowHelp(false);
-                setSettings(false);
-                if (nativeVisible) {
-                  const r = video.current?.getBoundingClientRect();
-                  if (r)
-                    void api.setViewport({
-                      x: r.x * devicePixelRatio,
-                      y: r.y * devicePixelRatio,
-                      width: r.width * devicePixelRatio,
-                      height: r.height * devicePixelRatio,
-                      visible: true,
-                    });
-                }
-              }}
-            >
-              <X size={20} />
-            </button>
-            {showHelp ? (
-              <>
-                <div className="eyebrow">WELCOME TO COURTSIDE</div>
-                <h2>A simpler way to watch.</h2>
-                <p>
-                  Choose Today or Tomorrow to find a matchup. Click its card for
-                  stats, or Watch game to enter your stream.
-                </p>
-                <ol>
-                  <li>Open your stream in your browser.</li>
-                  <li>
-                    In Network, find the successful media playlist request.
-                  </li>
-                  <li>
-                    Copy its full Request URL and Referer header into Courtside.
-                  </li>
-                </ol>
-                <p>
-                  Your source stays in memory for this session. Courtside does
-                  not discover streams or keep your access tokens.
-                </p>
-              </>
-            ) : (
-              <>
-                <div className="eyebrow">MAKE IT YOUR COURT</div>
-                <h2>Preferences</h2>
-                <label className="setting-row">
-                  Hide scores
-                  <input
-                    type="checkbox"
-                    checked={hidden}
-                    onChange={(e) => setHidden(e.target.checked)}
-                  />
-                </label>
-                <p className="muted">
-                  Light mode · Local time zone · One active stream
-                </p>
-                <div className="native-warning">
-                  {native?.message ?? "Checking player…"}
-                </div>
-                <p className="muted">
-                  Live statistics may run ahead of your video. Hide scores to
-                  avoid spoilers. Automatic video/stat synchronization is not
-                  enabled.
-                </p>
-              </>
-            )}
-          </section>
-        </div>
-      )}
     </div>
   );
 }
